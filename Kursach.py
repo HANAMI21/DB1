@@ -13,22 +13,14 @@ print("dfd")
 print("dfd")
 logging.basicConfig(filename='app.log', level=logging.INFO, filemode='w')
 
-try:
-    connection = pymysql.connect(
-        host=host,
-        port=3306,
-        user=user,
-        password=password,
-        database=db_name,
-        cursorclass=pymysql.cursors.DictCursor
-    )
-    print("successfully connect")
-    print("#" * 20)
+def connect_to_database():
+    try:
+        db_config = get_db_config()
+        connection = pymysql.connect(**db_config, cursorclass=pymysql.cursors.DictCursor)
+        return connection
+    except pymysql.MySQLError as ex:
+        return None, ex
 
-
-except Exception as ex:
-    print("Connection refused...")
-    print(ex)
 
 class DatabaseAuthApp:
     def __init__(self):
@@ -61,27 +53,36 @@ class DatabaseAuthApp:
         username = self.entry_username.get()
         password_user = self.entry_password.get()
 
+        user_role = self.check_user_role(username, password_user)
+
+        if user_role == 'admin':
+            self.all_table()
+            self.current_user = "Адмін"
+            self.show_login_success_message("Ви зайшли як Адмін!")
+        elif user_role == 'manager':
+            self.choice()
+            self.current_user = "Менеджер"
+            self.show_login_success_message("Ви зайшли як Менеджер!")
+        elif user_role == 'user':
+            self.current_user = "User"
+            self.show_login_info_message("Ви звичайний користувач, ви не маєте доступу до БД.")
+
+    def check_user_role(self, username, password_user):
         with connection.cursor() as cursor:
-            query = "SELECT Email, Passw, Role FROM Users;"
-            cursor.execute(query)
+            query = "SELECT Role FROM Users WHERE Email = %s AND Passw = %s;"
+            cursor.execute(query, (username, password_user))
+            result = cursor.fetchone()
+            if result:
+                return result['Role']
+            else:
+                return None
 
-            rows = cursor.fetchall()
-            for row in rows:
-                if row['Email'] == username:
-                    if row['Passw'] == password_user:
-                        if row['Role'] == 'admin':
-                            self.all_table()
-                            self.current_user = "Адмін"
-                            logging.info("Ви зайшли як Адмін!")
-                        elif row['Role'] == 'manager':
-                            self.choice()
-                            self.current_user = "Менеджер"
-                            logging.info("Ви зайшли як Менеджер!")
-                        elif row['Role'] == 'user':
-                            self.current_user = "User"
-                            messagebox.showinfo("Message", "Ви звичайний користувач, ви не маєете доступу до БД.")
+    def show_login_success_message(self, message):
+        logging.info(message)
+        messagebox.showinfo("Message", message)
 
-                print(row)
+    def show_login_info_message(self, message):
+        messagebox.showinfo("Message", message)
 
     def choice(self):
         self.root.destroy()
@@ -2584,27 +2585,35 @@ class DatabaseAuthApp:
     def export_to_pdf(self, title):
         logging.info(f"{self.current_user} роздрукував {title}")
         pdf_filename = f"{title}"
-        c = canvas.Canvas(pdf_filename, pagesize=letter)
 
         # Определяем ширины столбцов
         column_widths = [100, 180, 250]
 
+        # Создаем PDF-документ
+        c = canvas.Canvas(pdf_filename, pagesize=letter)
+
         # Добавляем заголовки
-        for i, column in enumerate(self.columns):
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(sum(column_widths[:i]) + 20, 750, column)
+        self.add_table_headers(c, column_widths)
 
         # Добавляем данные
-        for row_num, row in enumerate(self.tree.get_children()):
-            y = 700 - (row_num + 1) * 20
-            values = [self.tree.item(row)["values"][i] for i in range(len(self.columns))]
-            for i, value in enumerate(values):
-                c.setFont("Helvetica", 12)
-                c.drawString(sum(column_widths[:i]) + 20, y, str(value))
+        self.add_table_data(c, column_widths)
 
         # Сохраняем и закрываем PDF-документ
         c.save()
         print(f"Результаты запроса сохранены в файл: {title}")
+
+    def add_table_headers(self, pdf_canvas, column_widths):
+        for i, column in enumerate(self.columns):
+            pdf_canvas.setFont("Helvetica-Bold", 12)
+            pdf_canvas.drawString(sum(column_widths[:i]) + 20, 750, column)
+
+    def add_table_data(self, pdf_canvas, column_widths):
+        for row_num, row in enumerate(self.tree.get_children()):
+            y = 700 - (row_num + 1) * 20
+            values = [self.tree.item(row)["values"][i] for i in range(len(self.columns))]
+            for i, value in enumerate(values):
+                pdf_canvas.setFont("Helvetica", 12)
+                pdf_canvas.drawString(sum(column_widths[:i]) + 20, y, str(value))
 
     def query19(self):
         logging.info(f"{self.current_user} вибрав query19")
